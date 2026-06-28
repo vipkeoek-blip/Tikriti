@@ -1,4 +1,4 @@
-import os, random, string, json
+import os, random, json
 import requests
 from flask import Flask, request
 
@@ -9,39 +9,23 @@ ADMIN_ID = "1743301387"
 TG = f"https://api.telegram.org/bot{BOT_TOKEN}"
 JBIN_KEY = "$2a$10$GTPka01SaLPehwlSP01DH.k1WwIyh9Ko2GrTYMN91JAjBL2Dk.EIG"
 JBIN_API = "https://api.jsonbin.io/v3/b"
-BIN_ID_FILE = "bin_id.txt"
+BIN_ID = "6a40d3f1da38895dfe0a9368"
 
-# ── قاعدة بيانات الأكواد ──────────────────────────────────────
-def get_bin_id():
-    if os.path.exists(BIN_ID_FILE):
-        return open(BIN_ID_FILE).read().strip()
-    # أنشئ bin جديد
-    r = requests.post(JBIN_API, headers={
-        "Content-Type": "application/json",
-        "X-Master-Key": JBIN_KEY,
-        "X-Bin-Private": "true",
-        "X-Bin-Name": "tikriti_codes"
-    }, json={})
-    bid = r.json()["metadata"]["id"]
-    open(BIN_ID_FILE, "w").write(bid)
-    return bid
-
-def load_codes():
+def load_db():
     try:
-        bid = get_bin_id()
-        r = requests.get(f"{JBIN_API}/{bid}/latest",
+        r = requests.get(f"{JBIN_API}/{BIN_ID}/latest",
             headers={"X-Master-Key": JBIN_KEY})
-        return r.json().get("record", {})
+        data = r.json().get("record", {})
+        return data.get("codes", {}), data.get("fingerprints", {})
     except:
-        return {}
+        return {}, {}
 
-def save_codes(codes):
+def save_db(codes, fingerprints):
     try:
-        bid = get_bin_id()
-        requests.put(f"{JBIN_API}/{bid}", headers={
+        requests.put(f"{JBIN_API}/{BIN_ID}", headers={
             "Content-Type": "application/json",
             "X-Master-Key": JBIN_KEY
-        }, json=codes)
+        }, json={"codes": codes, "fingerprints": fingerprints})
     except:
         pass
 
@@ -58,7 +42,6 @@ def send(chat_id, text):
         "parse_mode": "HTML"
     })
 
-# ── Webhook ───────────────────────────────────────────────────
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def webhook():
     data = request.json
@@ -71,39 +54,32 @@ def webhook():
         return "ok"
 
     if text == "/generate":
-        codes = load_codes()
-        
-        # تحقق: هل هذا المستخدم لديه كود بالفعل؟
-        user_has_code = None
-        for code, data in codes.items():
-            if data.get("owner") == chat_id:
-                user_has_code = code
+        codes, fingerprints = load_db()
+
+        # هل يملك هذا الحساب كوداً سابقاً؟ إن وجد، أعد إرساله بدل إنشاء كود جديد
+        existing_code = None
+        for c, d in codes.items():
+            if d.get("owner") == chat_id:
+                existing_code = c
                 break
-        
-        # إذا كان لديه كود، أرسله له بدلاً من إنشاء جديد
-        if user_has_code:
+
+        if existing_code:
+            d = codes[existing_code]
+            r1 = max(0, 2 - d.get("used1", 0))
+            r2 = max(0, 2 - d.get("used2", 0))
             send(chat_id, (
-                f"🔑 <b>لديك كود بالفعل</b>\n\n"
-                f"📌 كودك الحالي:\n"
-                f"<code>{user_has_code}</code>\n\n"
-                f"✅ استخدم هذا الكود لفتح الأداة\n\n"
-                f"⚠️ <i>كل مستخدم يملك كوداً واحداً فقط</i>"
+                f"🎬 <b>TIKRITI — كودك الحالي</b>\n\n"
+                f"🔑 <code>{existing_code}</code>\n\n"
+                f"لديك كود واحد فقط لكل حساب.\n"
+                f"FPS متبقية: {r1} | آيباد متبقية: {r2}\n\n"
+                f"📌 انسخ الكود وأدخله في الأداة"
             ))
             return "ok"
-        
-        # إنشاء كود جديد للمستخدم
-        code = make_code()
-        codes[code] = {
-            "used1": 0,
-            "used2": 0,
-            "cnt1": 0,
-            "cnt2": 0,
-            "owner": chat_id,
-            "name": user_name
-        }
-        save_codes(codes)
 
-        # أرسل للمستخدم
+        code = make_code()
+        codes[code] = {"used1": 0, "used2": 0, "cnt1": 0, "cnt2": 0, "owner": chat_id}
+        save_db(codes, fingerprints)
+
         send(chat_id, (
             f"🎬 <b>TIKRITI — كودك الجديد</b>\n\n"
             f"🔑 <code>{code}</code>\n\n"
@@ -111,18 +87,16 @@ def webhook():
             f"• محاولتين في أداة تحويل FPS\n"
             f"• محاولتين في أداة آيباد\n\n"
             f"📌 انسخ الكود وأدخله في الأداة\n\n"
-            f"⚠️ <i>هذا الكود خاص بك ولا يمكن استخدامه من قبل آخرين</i>"
+            f"⚠️ <i>هذا كودك الوحيد ولا يمكن إصدار كود آخر لهذا الحساب</i>"
         ))
 
-        # أبلغ الأدمن
         if chat_id != ADMIN_ID:
             send(ADMIN_ID, f"📋 كود جديد صدر\nالكود: <code>{code}</code>\nلـ: {user_name} ({chat_id})")
 
     elif text == "/start":
         send(chat_id, (
             "👋 أهلاً بك في بوت <b>TIKRITI</b>\n\n"
-            "📌 أرسل /generate للحصول على كود خاص بك\n"
-            "✅ كل مستخدم يحصل على كود واحد فقط"
+            "أرسل /generate للحصول على كود الأداة"
         ))
 
     return "ok"
