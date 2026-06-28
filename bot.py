@@ -1,4 +1,4 @@
-import os, random, string, json
+import os, random, json
 import requests
 from flask import Flask, request
 
@@ -9,39 +9,23 @@ ADMIN_ID = "1743301387"
 TG = f"https://api.telegram.org/bot{BOT_TOKEN}"
 JBIN_KEY = "$2a$10$GTPka01SaLPehwlSP01DH.k1WwIyh9Ko2GrTYMN91JAjBL2Dk.EIG"
 JBIN_API = "https://api.jsonbin.io/v3/b"
-BIN_ID_FILE = "bin_id.txt"
-
-# ── قاعدة بيانات الأكواد ──────────────────────────────────────
-def get_bin_id():
-    if os.path.exists(BIN_ID_FILE):
-        return open(BIN_ID_FILE).read().strip()
-    # أنشئ bin جديد
-    r = requests.post(JBIN_API, headers={
-        "Content-Type": "application/json",
-        "X-Master-Key": JBIN_KEY,
-        "X-Bin-Private": "true",
-        "X-Bin-Name": "tikriti_codes"
-    }, json={})
-    bid = r.json()["metadata"]["id"]
-    open(BIN_ID_FILE, "w").write(bid)
-    return bid
+BIN_ID = "6a40d3f1da38895dfe0a9368"
 
 def load_codes():
     try:
-        bid = get_bin_id()
-        r = requests.get(f"{JBIN_API}/{bid}/latest",
+        r = requests.get(f"{JBIN_API}/{BIN_ID}/latest",
             headers={"X-Master-Key": JBIN_KEY})
-        return r.json().get("record", {})
+        data = r.json().get("record", {})
+        return data.get("codes", {})
     except:
         return {}
 
 def save_codes(codes):
     try:
-        bid = get_bin_id()
-        requests.put(f"{JBIN_API}/{bid}", headers={
+        requests.put(f"{JBIN_API}/{BIN_ID}", headers={
             "Content-Type": "application/json",
             "X-Master-Key": JBIN_KEY
-        }, json=codes)
+        }, json={"codes": codes})
     except:
         pass
 
@@ -58,7 +42,6 @@ def send(chat_id, text):
         "parse_mode": "HTML"
     })
 
-# ── Webhook ───────────────────────────────────────────────────
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def webhook():
     data = request.json
@@ -71,13 +54,11 @@ def webhook():
         return "ok"
 
     if text == "/generate":
-        # أنشئ كود جديد
         code = make_code()
         codes = load_codes()
         codes[code] = {"used1": 0, "used2": 0, "cnt1": 0, "cnt2": 0, "owner": chat_id}
         save_codes(codes)
 
-        # أرسل للمستخدم
         send(chat_id, (
             f"🎬 <b>TIKRITI — كودك الجديد</b>\n\n"
             f"🔑 <code>{code}</code>\n\n"
@@ -88,7 +69,6 @@ def webhook():
             f"⚠️ <i>كل كود لشخص واحد فقط</i>"
         ))
 
-        # أبلغ الأدمن
         if chat_id != ADMIN_ID:
             send(ADMIN_ID, f"📋 كود جديد صدر\nالكود: <code>{code}</code>\nلـ: {user_name} ({chat_id})")
 
