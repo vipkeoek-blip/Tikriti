@@ -16,16 +16,16 @@ def load_db():
         r = requests.get(f"{JBIN_API}/{BIN_ID}/latest",
             headers={"X-Master-Key": JBIN_KEY})
         data = r.json().get("record", {})
-        return data.get("codes", {}), data.get("fingerprints", {})
+        return data.get("codes", {}), data.get("fingerprints", {}), data.get("stats", {})
     except:
-        return {}, {}
+        return {}, {}, {}
 
-def save_db(codes, fingerprints):
+def save_db(codes, fingerprints, stats):
     try:
         requests.put(f"{JBIN_API}/{BIN_ID}", headers={
             "Content-Type": "application/json",
             "X-Master-Key": JBIN_KEY
-        }, json={"codes": codes, "fingerprints": fingerprints})
+        }, json={"codes": codes, "fingerprints": fingerprints, "stats": stats})
     except:
         pass
 
@@ -54,7 +54,7 @@ def webhook():
         return "ok"
 
     if text == "/generate":
-        codes, fingerprints = load_db()
+        codes, fingerprints, stats = load_db()
 
         # هل يملك هذا الحساب كوداً سابقاً؟ إن وجد، أعد إرساله بدل إنشاء كود جديد
         existing_code = None
@@ -77,8 +77,11 @@ def webhook():
             return "ok"
 
         code = make_code()
-        codes[code] = {"used1": 0, "used2": 0, "cnt1": 0, "cnt2": 0, "owner": chat_id}
-        save_db(codes, fingerprints)
+        codes[code] = {
+            "used1": 0, "used2": 0, "cnt1": 0, "cnt2": 0,
+            "owner": chat_id, "owner_name": user_name
+        }
+        save_db(codes, fingerprints, stats)
 
         send(chat_id, (
             f"🎬 <b>TIKRITI — كودك الجديد</b>\n\n"
@@ -89,9 +92,7 @@ def webhook():
             f"📌 انسخ الكود وأدخله في الأداة\n\n"
             f"⚠️ <i>هذا كودك الوحيد ولا يمكن إصدار كود آخر لهذا الحساب</i>"
         ))
-
-        if chat_id != ADMIN_ID:
-            send(ADMIN_ID, f"📋 كود جديد صدر\nالكود: <code>{code}</code>\nلـ: {user_name} ({chat_id})")
+        # ملاحظة: إشعارات الأدمن والإحصائيات انتقلت لبوت منفصل (stats_bot.py)
 
     elif text == "/start":
         send(chat_id, (
